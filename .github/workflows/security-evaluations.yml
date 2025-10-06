@@ -1,0 +1,251 @@
+name: Security Evaluation Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  security-evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Create clean source zip
+        run: |
+          # Create zip excluding virtual environments and other unnecessary files
+          zip -r source_code.zip . \
+            -x "*.git*" \
+            -x "*venv/*" \
+            -x "*env/*" \
+            -x "*.venv/*" \
+            -x "*Lib/*" \
+            -x "*Scripts/*" \
+            -x "*Include/*" \
+            -x "*site-packages/*" \
+            -x "*dist-packages/*" \
+            -x "*node_modules/*" \
+            -x "*__pycache__/*" \
+            -x "*.pyc" \
+            -x "*.pyo" \
+            -x "*.egg-info/*" \
+            -x "*dist/*" \
+            -x "*build/*"
+          
+          echo "Created source_code.zip"
+          ls -lh source_code.zip
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run Security Evaluation
+        id: security_check
+        env:
+          API_KEY: 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d
+          USER_ID: Shehriar101109
+        run: |
+          python << 'EOF'
+          import requests
+          import time
+          import json
+          import os
+          import sys
+
+          API_BASE_URL = "https://api.aginiti.com/api/v1"
+          API_KEY = os.environ.get("API_KEY")
+          USER_ID = os.environ.get("USER_ID")
+          RISK_THRESHOLD = 50.0
+          
+          # Categories to evaluate
+          OWASP_CATEGORIES = [
+              "prompt-injection",
+              "insecure-output-handling",
+              "sensitive-information-disclosure",
+              "excessive-agency",
+          ]
+
+          if not API_KEY or not USER_ID:
+              print("ERROR: Set AGINITI_API_KEY and AGINITI_USER_ID in repository secrets")
+              sys.exit(1)
+
+          print("Preparing to upload source code for evaluation")
+          print(f"Categories: {', '.join(OWASP_CATEGORIES)}")
+          
+          # Prepare multipart form data with zip file
+          files = {
+              'zip_file': ('source_code.zip', open('source_code.zip', 'rb'), 'application/zip')
+          }
+          
+          data = {
+              'user_id': USER_ID,
+              'use_llm': 'true',
+              'api_key': API_KEY
+          }
+          
+          # Add OWASP categories
+          for cat in OWASP_CATEGORIES:
+              if 'owasp_top_10' not in data:
+                  data['owasp_top_10'] = []
+              if isinstance(data['owasp_top_10'], list):
+                  data['owasp_top_10'].append(cat)
+              else:
+                  data['owasp_top_10'] = [data['owasp_top_10'], cat]
+
+          try:
+              print("\nUploading source code and starting evaluation...")
+              resp = requests.post(
+                  f"{API_BASE_URL}/evaluate",
+                  files=files,
+                  data=data,
+                  timeout=60
+              )
+              resp.raise_for_status()
+              
+              result = resp.json()
+              job_id = result.get("job_id")
+              
+              if not job_id:
+                  print("ERROR: No job ID returned")
+                  print(f"Response: {result}")
+                  sys.exit(1)
+              
+              print(f"Job ID: {job_id}\n")
+              
+              # Poll for completion
+              max_wait = 600
+              poll_interval = 20
+              elapsed = 0
+              
+              while elapsed < max_wait:
+                  time.sleep(poll_interval)
+                  elapsed += poll_interval
+                  
+                  status_resp = requests.get(
+                      f"{API_BASE_URL}/evaluation_status/{job_id}",
+                      params={"user_id": USER_ID},
+                      timeout=20
+                  )
+                  status_resp.raise_for_status()
+                  data_resp = status_resp.json()
+                  
+                  status = data_resp.get("status")
+                  progress = data_resp.get("progress", "0%")
+                  print(f"{status} | {progress} | {elapsed}s")
+                  
+                  if status == "completed":
+                      results = data_resp.get("results", {})
+                      if "results" in results:
+                          results = results["results"]
+                      
+                      summary = results.get("summary", {})
+                      security_evals = results.get("security_evaluations", [])
+                      
+                      risk_score = summary.get("risk_score", 0)
+                      total_issues = summary.get("total_issues", 0)
+                      high = summary.get("high_risk_issues", 0)
+                      medium = summary.get("medium_risk_issues", 0)
+                      low = summary.get("low_risk_issues", 0)
+                      
+                      print(f"\n{'='*60}")
+                      print("SECURITY EVALUATION RESULTS")
+                      print(f"{'='*60}")
+                      print(f"Risk Score: {risk_score}/100 (Threshold: {RISK_THRESHOLD})")
+                      print(f"Total Issues: {total_issues}")
+                      print(f"  High: {high} | Medium: {medium} | Low: {low}")
+                      print(f"{'='*60}\n")
+                      
+                      # Show all issues
+                      if security_evals:
+                          print("Issues Found:")
+                          for eval_item in security_evals:
+                              cat = eval_item.get("category", "Unknown")
+                              issues = eval_item.get("issues", [])
+                              found = [i for i in issues if i.get("found")]
+                              
+                              if found:
+                                  print(f"\n[{cat}] - {len(found)} issue(s)")
+                                  for issue in found:
+                                      print(f"  - {issue.get('issue', 'Unknown')}")
+                                      print(f"    Risk: {issue.get('risk_level', 'unknown')}")
+                                      print(f"    File: {issue.get('file', 'unknown')}")
+                                      if issue.get('recommendation'):
+                                          print(f"    Fix: {issue.get('recommendation')[:100]}")
+                      
+                      # Write GitHub summary
+                      with open(os.environ.get('GITHUB_STEP_SUMMARY', 'summary.md'), 'w') as f:
+                          if risk_score > RISK_THRESHOLD:
+                              f.write("## 🚨 Security Evaluation FAILED\n\n")
+                          else:
+                              f.write("## ✅ Security Evaluation PASSED\n\n")
+                          
+                          f.write(f"**Risk Score:** {risk_score}/100 (Threshold: {RISK_THRESHOLD})\n\n")
+                          f.write(f"**Issues:** {total_issues} (High: {high}, Medium: {medium}, Low: {low})\n\n")
+                          
+                          if security_evals:
+                              f.write("### Detected Issues\n\n")
+                              for eval_item in security_evals:
+                                  cat = eval_item.get("category", "Unknown")
+                                  issues = eval_item.get("issues", [])
+                                  found = [i for i in issues if i.get("found")]
+                                  
+                                  if found:
+                                      f.write(f"#### {cat}\n\n")
+                                      for issue in found:
+                                          f.write(f"- **{issue.get('issue', 'Unknown')}** ({issue.get('risk_level', 'unknown')})\n")
+                                          f.write(f"  - File: `{issue.get('file', 'unknown')}`\n")
+                                          if issue.get('recommendation'):
+                                              f.write(f"  - Fix: {issue.get('recommendation')}\n")
+                                          f.write("\n")
+                      
+                      # Exit based on threshold
+                      if risk_score > RISK_THRESHOLD:
+                          print(f"\n❌ FAILED: Risk score exceeds threshold")
+                          sys.exit(1)
+                      else:
+                          print(f"\n✅ PASSED: Risk score within acceptable range")
+                          sys.exit(0)
+                  
+                  elif status == "failed":
+                      print(f"\nEvaluation failed: {data_resp.get('message', 'Unknown')}")
+                      sys.exit(1)
+              
+              print(f"\nTimeout after {elapsed}s")
+              sys.exit(1)
+              
+          except Exception as e:
+              print(f"\nError: {e}")
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          finally:
+              # Cleanup
+              if os.path.exists('source_code.zip'):
+                  os.remove('source_code.zip')
+          EOF
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🚨 Security Evaluation Failed\n\nSecurity issues found that exceed the acceptable risk threshold. Please review and fix the vulnerabilities.\n\n[View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+            })
