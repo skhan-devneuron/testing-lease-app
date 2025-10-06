@@ -209,7 +209,7 @@ def book_visit(request: VapiRequest):
 def health_check():
     return {"status": "healthy", "message": "DevNeuron ChatBot is running"}
 
-@app.get("/ping")
+@app.get("/ping_twice")
 def ping():
     return {"status": "healthy", "message": "DevNeuron lease app ChatBot is running"}
 
