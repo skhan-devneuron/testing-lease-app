@@ -56,8 +56,8 @@ jobs:
       - name: Run Security Evaluation
         id: security_check
         env:
-          API_KEY: 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d
-          USER_ID: Shehriar101109
+          API_KEY: ${{ secrets.AGINITI_API_KEY }}
+          USER_ID: ${{ secrets.AGINITI_USER_ID }}
         run: |
           python << 'EOF'
           import requests
@@ -154,6 +154,11 @@ jobs:
                       
                       summary = results.get("summary", {})
                       security_evals = results.get("security_evaluations", [])
+                      
+                      # DEBUG: Print full response to see what's wrong
+                      print("\nDEBUG - Full results:")
+                      print(json.dumps(results, indent=2)[:2000])
+                      print("\n")
                       
                       risk_score = summary.get("risk_score", 0)
                       total_issues = summary.get("total_issues", 0)
