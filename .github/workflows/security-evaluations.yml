@@ -57,7 +57,7 @@ jobs:
         id: security_check
         env:
           API_KEY: 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d
-          USER_ID: Shehriar101108
+          USER_ID: Shehriar101109
         run: |
           python << 'EOF'
           import requests
@@ -74,8 +74,10 @@ jobs:
           # Categories to evaluate
           OWASP_CATEGORIES = [
               "insecure-output-handling",
-              "unbounded-consumption",
               "excessive-agency",
+              "unbounded-consumption",
+              "vector-and-embedding-weaknesses",
+              "supply-chain"
           ]
 
           if not API_KEY or not USER_ID:
@@ -153,11 +155,6 @@ jobs:
                       
                       summary = results.get("summary", {})
                       security_evals = results.get("security_evaluations", [])
-                      
-                      # DEBUG: Print full response to see what's wrong
-                      print("\nDEBUG - Full results:")
-                      print(json.dumps(results, indent=2)[:2000])
-                      print("\n")
                       
                       risk_score = summary.get("risk_score", 0)
                       total_issues = summary.get("total_issues", 0)
