@@ -213,6 +213,10 @@ def health_check():
 def ping():
     return {"status": "healthy", "message": "DevNeuron lease app ChatBot is running"}
 
+@app.get("/ping_twice")
+def ping_twice():
+    return {"status": "healthy", "message": "DevNeuron lease app ChatBot is running"}
+
 @app.post("/get_slots/")
 def get_slots(request: VapiRequest):
     for tool_call in request.message.toolCalls:

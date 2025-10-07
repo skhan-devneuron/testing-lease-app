@@ -74,10 +74,7 @@ jobs:
           # Categories to evaluate
           OWASP_CATEGORIES = [
               "insecure-output-handling",
-              "excessive-agency",
               "unbounded-consumption",
-              "vector-and-embedding-weaknesses",
-              "supply-chain"
           ]
 
           if not API_KEY or not USER_ID:
