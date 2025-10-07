@@ -215,7 +215,7 @@ def ping():
 
 @app.get("/ping_twice")
 def ping_twice():
-    return {"status": "healthy", "message": "DevNeuron lease app ChatBot is running very nicely"}
+    return {"status": "healthy", "message": "Our lease app ChatBot is running very nicely"}
 
 @app.post("/get_slots/")
 def get_slots(request: VapiRequest):
